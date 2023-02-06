@@ -24,4 +24,6 @@ public interface UserService extends IService<User> {
     long userRegister(String userAccount, String userPassword, String checkPassword);
 
     User userLogin(String userAccount, String userPassword, HttpServletRequest request);
+
+    User getSafeUser(User user,HttpServletRequest request);
 }

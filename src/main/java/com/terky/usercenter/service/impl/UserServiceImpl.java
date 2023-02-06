@@ -107,7 +107,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
             return null;
         }
 
+        User safeUser = getSafeUser(user, request);
+
+        //记录用户登录态
+        request.getSession().setAttribute(USER_LOGIN_STATE, safeUser);
+
         //用户脱敏
+        return safeUser;
+    }
+
+    @Override
+    public User getSafeUser(User user,HttpServletRequest request) {
+
         User safeUser = new User();
         safeUser.setId(user.getId());
         safeUser.setUsername(user.getUsername());
@@ -120,8 +131,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         safeUser.setUserStatus(0);
         safeUser.setCreateTime(user.getCreateTime());
 
-        //记录用户登录态
-        request.getSession().setAttribute(USER_LOGIN_STATE, safeUser);
+
 
         return safeUser;
     }
