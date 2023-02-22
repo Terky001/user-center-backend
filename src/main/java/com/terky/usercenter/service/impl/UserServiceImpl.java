@@ -1,8 +1,9 @@
 package com.terky.usercenter.service.impl;
-import java.util.Date;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.terky.usercenter.common.ErrorCode;
+import com.terky.usercenter.exception.BusinessException;
 import com.terky.usercenter.model.User;
 import com.terky.usercenter.service.UserService;
 import com.terky.usercenter.mapper.UserMapper;
@@ -33,32 +34,41 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     private static final String SALT = "terky";
 
     @Override
-    public long userRegister(String userAccount, String userPassword, String checkPassword) {
+    public long userRegister(String userAccount, String userPassword, String checkPassword, String planetCode) {
         //校验
-        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword))
-            return -1;
+        if (StringUtils.isAnyBlank(userAccount, userPassword, checkPassword, planetCode))
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
         if (userAccount.length() < 4)
-            return -1;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "账户长度不足");
         if (userPassword.length() < 8 || checkPassword.length() < 8)
-            return -1;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "密码长度不足");
+        if (planetCode.length() > 5)
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "星球编码不符");
 
 
         //账户不能包含特殊字符  正则
         String validPattern = "[\\\\u00A0\\\\s\\\"`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
         Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
         if (matcher.find())
-            return -1;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
 
         //密码和校验密码相同
         if (!userPassword.equals(checkPassword))
-            return -1;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
 
         //账户不能重复
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("userAccount",userAccount);
         long count = this.count(queryWrapper);
         if (count > 0)
-            return -1;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
+
+        //星球不能重复
+        queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("planetCode",planetCode);
+        count = this.count(queryWrapper);
+        if (count > 0)
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
 
         //加密密码
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
@@ -69,7 +79,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         user.setUserPassword(encryptPassword);
         boolean saveResult = this.save(user);
         if (!saveResult) //避免拆箱错误
-            return -1;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
 
         return user.getId();
     }
@@ -81,17 +91,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     public User userLogin(String userAccount, String userPassword, HttpServletRequest request) {
         //校验
         if (StringUtils.isAnyBlank(userAccount, userPassword))
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
         if (userAccount.length() < 4)
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
         if (userPassword.length() < 8)
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");;
 
         //账户不能包含特殊字符  正则
         String validPattern = "[\\\\u00A0\\\\s\\\"`~!@#$%^&*()+=|{}':;',\\\\[\\\\].<>/?~！@#￥%……&*（）——+|{}【】‘；：”“’。，、？]";
         Matcher matcher = Pattern.compile(validPattern).matcher(userAccount);
         if (matcher.find())
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "账户不可以包含特殊字符");
 
         //加密密码
         String encryptPassword = DigestUtils.md5DigestAsHex((SALT + userPassword).getBytes());
@@ -104,10 +114,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         //用户不存在
         if (user == null){
             log.info("user login failed, account cannot match password");
-            return null;
+            throw new BusinessException(ErrorCode.NULL_ERROR, "用户不存在");
         }
 
-        User safeUser = getSafeUser(user, request);
+        User safeUser = getSafeUser(user);
 
         //记录用户登录态
         request.getSession().setAttribute(USER_LOGIN_STATE, safeUser);
@@ -117,23 +127,32 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
     }
 
     @Override
-    public User getSafeUser(User user,HttpServletRequest request) {
+    public User getSafeUser(User originUser) {
+        if (originUser == null){
+            throw new BusinessException(ErrorCode.NULL_ERROR, "无用户信息");
+        }
 
         User safeUser = new User();
-        safeUser.setId(user.getId());
-        safeUser.setUsername(user.getUsername());
-        safeUser.setUserAccount(user.getUserAccount());
-        safeUser.setAvatarUrl(user.getAvatarUrl());
-        safeUser.setGender(user.getGender());
-        safeUser.setPhone(user.getPhone());
-        safeUser.setEmail(user.getEmail());
-        safeUser.setUserRole(user.getUserRole());
+        safeUser.setId(originUser.getId());
+        safeUser.setUsername(originUser.getUsername());
+        safeUser.setUserAccount(originUser.getUserAccount());
+        safeUser.setAvatarUrl(originUser.getAvatarUrl());
+        safeUser.setGender(originUser.getGender());
+        safeUser.setPhone(originUser.getPhone());
+        safeUser.setEmail(originUser.getEmail());
+        safeUser.setPlanetCode(originUser.getPlanetCode());
+        safeUser.setUserRole(originUser.getUserRole());
         safeUser.setUserStatus(0);
-        safeUser.setCreateTime(user.getCreateTime());
-
-
+        safeUser.setCreateTime(originUser.getCreateTime());
 
         return safeUser;
+    }
+
+    @Override
+    public int userLogout(HttpServletRequest request) {
+        //删除登录态
+        request.getSession().removeAttribute(USER_LOGIN_STATE);
+        return 1;
     }
 }
 

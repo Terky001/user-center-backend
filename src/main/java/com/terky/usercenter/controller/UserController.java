@@ -1,7 +1,11 @@
 package com.terky.usercenter.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.terky.usercenter.common.BaseResponse;
+import com.terky.usercenter.common.ErrorCode;
+import com.terky.usercenter.common.ResultUtils;
 import com.terky.usercenter.constant.UserConstant;
+import com.terky.usercenter.exception.BusinessException;
 import com.terky.usercenter.model.User;
 import com.terky.usercenter.model.UserLoginRequest;
 import com.terky.usercenter.model.UserRegisterRequest;
@@ -11,8 +15,8 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/user")
@@ -22,74 +26,102 @@ public class UserController {
     private UserService userService;
 
     @PostMapping("/register")
-    public Long userRegister(@RequestBody UserRegisterRequest userRegisterRequest){
+    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest){
 
         if (userRegisterRequest == null)
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");;
 
         String userAccount = userRegisterRequest.getUserAccount();
         String userPassword = userRegisterRequest.getUserPassword();
         String checkPassword = userRegisterRequest.getCheckPassword();
-        if (StringUtils.isAnyBlank(userAccount, userPassword,checkPassword))
-            return null;
+        String planetCode = userRegisterRequest.getPlanetCode();
 
-        return userService.userRegister(userAccount, userPassword, checkPassword);
+        if (StringUtils.isAnyBlank(userAccount, userPassword,checkPassword,planetCode))
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");;
+
+        long result = userService.userRegister(userAccount, userPassword, checkPassword, planetCode);
+
+        return ResultUtils.success(result);
     }
 
     @GetMapping("/current")
-    public User getCurrentUser(HttpServletRequest request){
+    public BaseResponse<User> getCurrentUser(HttpServletRequest request){
         Object userObj = request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
         User currentUser = (User) userObj;
         if (currentUser == null){
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
         }
 
         long userid = currentUser.getId();
         User user = userService.getById(userid);
+        User safeUser = userService.getSafeUser(user);
 
-        return userService.getSafeUser(user,request);
+        return ResultUtils.success(safeUser);
     }
 
     @PostMapping("/login")
-    public User userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request){
+    public BaseResponse<User> userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request){
 
         if (userLoginRequest == null)
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");;
 
         String userAccount = userLoginRequest.getUserAccount();
         String userPassword = userLoginRequest.getUserPassword();
         if (StringUtils.isAnyBlank(userAccount, userPassword))
-            return null;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");;
 
-        return userService.userLogin(userAccount, userPassword,request);
+        User user =  userService.userLogin(userAccount, userPassword,request);
+
+        return ResultUtils.success(user);
+    }
+
+    @PostMapping("/logout")
+    public BaseResponse<Integer> userLogout(HttpServletRequest request){
+        if (request == null){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
+        }
+        System.out.println("no error");
+        int result = userService.userLogout(request);
+
+        return ResultUtils.success(result);
     }
 
     @GetMapping("/search")
-    public List<User> searchUsers(String username, HttpServletRequest request){
+    public BaseResponse<List<User>> searchUsers(String username, HttpServletRequest request){
 
-        Object userObj = request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
-        User user = (User) userObj;
-        if (user == null || user.getUserRole() != UserConstant.ADMIN_ROLE){
-            return new ArrayList<>();
+        if (!isAdmin(request)){
+            throw new BusinessException(ErrorCode.NO_AUTH, "无权限");
         }
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
         if (StringUtils.isNoneBlank(username)){
             queryWrapper.like("username",username);
         }
-        return userService.list(queryWrapper);
+        List<User> userList =  userService.list(queryWrapper);
+
+        List<User> list =  userList.stream().map(user -> userService.getSafeUser(user)).collect(Collectors.toList());
+
+        return ResultUtils.success(list);
     }
 
     @PostMapping("/delete")
-    public boolean deleteUser(long id, HttpServletRequest request){
+    public BaseResponse<Boolean> deleteUser(long id, HttpServletRequest request){
 
-        Object userObj = request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
-        User user = (User) userObj;
-        if (user == null || user.getUserRole() != UserConstant.ADMIN_ROLE){
-            return false;
+        if (!isAdmin(request)){
+            throw new BusinessException(ErrorCode.NO_AUTH, "无权限");
         }
         if (id <= 0){
-            return false;
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数错误");
         }
-        return userService.removeById(id);
+        boolean result =  userService.removeById(id);
+
+        return ResultUtils.success(result);
     }
+
+    private boolean isAdmin(HttpServletRequest request) {
+        // 仅管理员可查询
+        Object userObj = request.getSession().getAttribute(UserConstant.USER_LOGIN_STATE);
+        User user = (User) userObj;
+        return user != null && user.getUserRole() == UserConstant.ADMIN_ROLE;
+    }
+
 }
