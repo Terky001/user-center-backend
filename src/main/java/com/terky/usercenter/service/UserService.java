@@ -4,6 +4,7 @@ import com.terky.usercenter.model.User;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 /**
 * @author www
@@ -28,4 +29,9 @@ public interface UserService extends IService<User> {
     User getSafeUser(User user);
 
     int userLogout(HttpServletRequest request);
+
+    /*
+     * 根据标签搜索用户
+     */
+    List<User> searchUsersByTag(List<String> tagList);
 }
